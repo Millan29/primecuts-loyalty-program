@@ -1,0 +1,66 @@
+Task:
+Generate a lightweight web app for a small butchery loyalty program using HTML, CSS, and JavaScript. Use Firebase (Authentication + Firestore) for user login and database. The app should be minimalistic, fast, and easy to host on Replit / Netlify.
+
+Customer Flow:
+
+Customers register with their phone number only (no email required).
+
+Customers can log in using phone number + password.
+
+After login, they see a dashboard showing:
+
+Current points balance
+
+Progress toward rewards (100 points → 0.5kg, 180 points → 0.75kg)
+
+A redeem button (only if they have enough points)
+
+Redeem action calls a function processed only on the admin/cashier side, points are deducted in Firestore.
+
+Admin / Cashier Flow:
+
+Admin logs in with a separate admin account.
+
+Admin can search for a customer by phone number.
+
+Admin can enter a purchase amount → system calculates points automatically (floor(amount / 100) * 5) and updates the customer’s points in Firestore.
+
+Admin can redeem points for a customer by clicking a button → 100 pts = 0.5kg, 180 pts = 0.75kg → points deducted atomically.
+
+Firestore Collections:
+
+customers/{phone}: { points, createdAt }
+
+purchases/{autoId}: { customerPhone, amount, pointsEarned, createdAt, createdBy }
+
+redemptions/{autoId}: { customerPhone, rewardKg, pointsSpent, createdAt, processedBy }
+
+admins/{uid}: empty docs for admin UIDs
+
+Requirements:
+
+Minimal UI (simple forms + table/lists for dashboard)
+
+Fully functional signup, login, add purchase, view points, redeem points
+
+Use Firebase Web SDK via CDN (no backend server needed)
+
+Include transaction or batched writes for awarding/redeeming points
+
+Include comments in code explaining each step
+
+Include a basic CSS layout that is clean and mobile-friendly
+
+Ready to deploy on Replit / Netlify
+
+Deliverables:
+
+signup.html, login.html, dashboard.html (customer)
+
+admin.html (cashier)
+
+app.js (handles Firebase initialization + logic)
+
+style.css (clean minimal CSS)
+
+Comments explaining the Firebase collections, transactions, and page flow
