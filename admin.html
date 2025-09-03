@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Butchery Loyalty</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Firebase CDN -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏪 Admin / Cashier Panel</h1>
+            <p>Manage customer purchases and redemptions</p>
+            <button id="logoutBtn" class="btn btn-secondary small">Logout</button>
+        </div>
+        
+        <!-- Admin Login Card -->
+        <div class="card" id="loginCard">
+            <h2>Admin Login</h2>
+            <form id="adminLoginForm">
+                <div class="form-group">
+                    <label for="adminEmail">Admin Email:</label>
+                    <input type="email" id="adminEmail" placeholder="admin@butchery.com" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="adminPassword">Password:</label>
+                    <input type="password" id="adminPassword" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Login as Admin</button>
+                <div id="loginMessage" class="message"></div>
+            </form>
+            
+            <div class="links">
+                <a href="index.html">← Back to Home</a>
+            </div>
+        </div>
+        
+        <!-- Admin Dashboard -->
+        <div class="admin-dashboard" id="adminDashboard" style="display: none;">
+            
+            <!-- Customer Search -->
+            <div class="card">
+                <h2>🔍 Find Customer</h2>
+                <div class="form-group">
+                    <label for="phoneSearch">Search by Phone Number:</label>
+                    <input type="tel" id="phoneSearch" placeholder="+1234567890">
+                    <button class="btn btn-secondary" onclick="searchCustomer()">Search</button>
+                </div>
+                <div id="customerResults"></div>
+            </div>
+            
+            <!-- Add Purchase -->
+            <div class="card">
+                <h2>💰 Add Purchase</h2>
+                <form id="purchaseForm">
+                    <div class="form-group">
+                        <label for="customerPhone">Customer Phone:</label>
+                        <input type="tel" id="customerPhone" placeholder="+1234567890" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="purchaseAmount">Purchase Amount ($):</label>
+                        <input type="number" id="purchaseAmount" min="0" step="0.01" placeholder="50.00" required>
+                    </div>
+                    
+                    <div class="points-preview">
+                        Points to be earned: <span id="pointsPreview">0</span>
+                        <small>Formula: floor(amount / 100) × 5</small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Add Purchase</button>
+                </form>
+            </div>
+            
+            <!-- Process Redemption -->
+            <div class="card">
+                <h2>🎁 Process Redemption</h2>
+                <div class="form-group">
+                    <label for="redemptionPhone">Customer Phone:</label>
+                    <input type="tel" id="redemptionPhone" placeholder="+1234567890">
+                    <button class="btn btn-secondary" onclick="loadCustomerForRedemption()">Load Customer</button>
+                </div>
+                
+                <div id="redemptionOptions" style="display: none;">
+                    <div class="customer-info">
+                        <p><strong>Customer:</strong> <span id="redemptionCustomerName"></span></p>
+                        <p><strong>Current Points:</strong> <span id="redemptionPoints"></span></p>
+                    </div>
+                    
+                    <div class="redemption-buttons">
+                        <button class="btn btn-primary" onclick="processRedemption('small')" id="redeem100">
+                            Redeem 0.5kg (100 points)
+                        </button>
+                        <button class="btn btn-primary" onclick="processRedemption('large')" id="redeem180">
+                            Redeem 0.75kg (180 points)
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Recent Transactions -->
+            <div class="card">
+                <h2>📊 Recent Transactions</h2>
+                <div class="transaction-tabs">
+                    <button class="tab-btn active" onclick="showTransactions('purchases')">Purchases</button>
+                    <button class="tab-btn" onclick="showTransactions('redemptions')">Redemptions</button>
+                </div>
+                <div id="transactionsList">
+                    <p class="loading">Loading transactions...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="message" class="message"></div>
+    </div>
+    
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+    <script>
+        let currentAdmin = null;
+        let currentCustomerForRedemption = null;
+        
+        // Check if admin is already logged in
+        window.addEventListener('load', () => {
+            auth.onAuthStateChanged(async (user) => {
+                if (user) {
+                    const isAdmin = await DatabaseHelpers.isAdmin(user.uid);
+                    if (isAdmin) {
+                        currentAdmin = user;
+                        showAdminDashboard();
+                    } else {
+                        await auth.signOut();
+                        showMessage('Access denied. Admin privileges required.', 'error');
+                    }
+                }
+            });
+        });
+        
+        // Admin login
+        document.getElementById('adminLoginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('adminEmail').value;
+            const password = document.getElementById('adminPassword').value;
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = 'Logging in...';
+            submitBtn.disabled = true;
+            
+            try {
+                const userCredential = await auth.signInWithEmailAndPassword(email, password);
+                const isAdmin = await DatabaseHelpers.isAdmin(userCredential.user.uid);
+                
+                if (isAdmin) {
+                    currentAdmin = userCredential.user;
+                    showAdminDashboard();
+                    document.getElementById('loginMessage').style.display = 'none';
+                } else {
+                    await auth.signOut();
+                    showLoginMessage('Access denied. Admin privileges required.', 'error');
+                }
+            } catch (error) {
+                console.error('Admin login error:', error);
+                showLoginMessage('Invalid credentials', 'error');
+            } finally {
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
+            }
+        });
+        
+        // Show admin dashboard
+        function showAdminDashboard() {
+            document.getElementById('loginCard').style.display = 'none';
+            document.getElementById('adminDashboard').style.display = 'block';
+            loadRecentTransactions('purchases');
+        }
+        
+        // Purchase amount input handler - calculate points preview
+        document.getElementById('purchaseAmount').addEventListener('input', (e) => {
+            const amount = parseFloat(e.target.value) || 0;
+            const points = Math.floor(amount / 100) * 5;
+            document.getElementById('pointsPreview').textContent = points;
+        });
+        
+        // Add purchase form
+        document.getElementById('purchaseForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const customerPhone = document.getElementById('customerPhone').value.trim();
+            const amount = parseFloat(document.getElementById('purchaseAmount').value);
+            
+            if (!currentAdmin) {
+                showMessage('Admin not authenticated', 'error');
+                return;
+            }
+            
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = 'Processing...';
+            submitBtn.disabled = true;
+            
+            try {
+                const result = await DatabaseHelpers.addPurchase(customerPhone, amount, currentAdmin.uid);
+                
+                if (result.success) {
+                    showMessage(`Purchase added! Customer earned ${result.pointsEarned} points. New balance: ${result.newBalance}`, 'success');
+                    document.getElementById('purchaseForm').reset();
+                    document.getElementById('pointsPreview').textContent = '0';
+                    await loadRecentTransactions('purchases');
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                console.error('Add purchase error:', error);
+                showMessage('Error adding purchase', 'error');
+            } finally {
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
+            }
+        });
+        
+        // Search customer function
+        async function searchCustomer() {
+            const phoneQuery = document.getElementById('phoneSearch').value.trim();
+            const resultsDiv = document.getElementById('customerResults');
+            
+            if (phoneQuery.length < 3) {
+                resultsDiv.innerHTML = '<p class="error">Please enter at least 3 digits</p>';
+                return;
+            }
+            
+            try {
+                resultsDiv.innerHTML = '<p class="loading">Searching...</p>';
+                
+                const result = await DatabaseHelpers.searchCustomers(phoneQuery);
+                
+                if (result.success && result.customers.length > 0) {
+                    const customersHTML = result.customers.map(customer => `
+                        <div class="customer-result">
+                            <div class="customer-info">
+                                <strong>${customer.phone}</strong>
+                                ${customer.name ? `<br><span class="customer-name">${customer.name}</span>` : ''}
+                                <br><span class="points">${customer.points || 0} points</span>
+                            </div>
+                            <div class="customer-actions">
+                                <button class="btn btn-small" onclick="selectCustomerForPurchase('${customer.phone}')">
+                                    Select for Purchase
+                                </button>
+                                <button class="btn btn-small" onclick="selectCustomerForRedemption('${customer.phone}', ${customer.points || 0}, '${customer.name || ''}')">
+                                    Select for Redemption
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    resultsDiv.innerHTML = customersHTML;
+                } else {
+                    resultsDiv.innerHTML = '<p class="no-results">No customers found</p>';
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                resultsDiv.innerHTML = '<p class="error">Error searching customers</p>';
+            }
+        }
+        
+        // Select customer for purchase
+        function selectCustomerForPurchase(phone) {
+            document.getElementById('customerPhone').value = phone;
+            showMessage(`Selected ${phone} for purchase`, 'info');
+        }
+        
+        // Select customer for redemption
+        function selectCustomerForRedemption(phone, points, name) {
+            document.getElementById('redemptionPhone').value = phone;
+            loadCustomerForRedemption();
+        }
+        
+        // Load customer for redemption
+        async function loadCustomerForRedemption() {
+            const phone = document.getElementById('redemptionPhone').value.trim();
+            
+            if (!phone) {
+                showMessage('Please enter a phone number', 'error');
+                return;
+            }
+            
+            try {
+                const result = await DatabaseHelpers.getCustomer(phone);
+                
+                if (result.success) {
+                    const customer = result.data;
+                    currentCustomerForRedemption = { phone, ...customer };
+                    
+                    document.getElementById('redemptionCustomerName').textContent = customer.name || phone;
+                    document.getElementById('redemptionPoints').textContent = customer.points || 0;
+                    
+                    // Update redemption buttons
+                    const redeem100Btn = document.getElementById('redeem100');
+                    const redeem180Btn = document.getElementById('redeem180');
+                    
+                    redeem100Btn.disabled = (customer.points || 0) < 100;
+                    redeem180Btn.disabled = (customer.points || 0) < 180;
+                    
+                    document.getElementById('redemptionOptions').style.display = 'block';
+                } else {
+                    showMessage('Customer not found', 'error');
+                    document.getElementById('redemptionOptions').style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Load customer error:', error);
+                showMessage('Error loading customer', 'error');
+            }
+        }
+        
+        // Process redemption
+        async function processRedemption(rewardType) {
+            if (!currentCustomerForRedemption || !currentAdmin) {
+                showMessage('Missing customer or admin data', 'error');
+                return;
+            }
+            
+            const rewardConfig = {
+                'small': { kg: 0.5, points: 100 },
+                'large': { kg: 0.75, points: 180 }
+            };
+            
+            const reward = rewardConfig[rewardType];
+            
+            if (!confirm(`Process redemption of ${reward.kg}kg for ${reward.points} points for ${currentCustomerForRedemption.phone}?`)) {
+                return;
+            }
+            
+            try {
+                showMessage('Processing redemption...', 'info');
+                
+                const result = await DatabaseHelpers.redeemPoints(
+                    currentCustomerForRedemption.phone,
+                    rewardType,
+                    currentAdmin.uid
+                );
+                
+                if (result.success) {
+                    showMessage(`Redemption successful! ${result.rewardKg}kg redeemed. Customer new balance: ${result.newBalance} points`, 'success');
+                    
+                    // Refresh customer data
+                    await loadCustomerForRedemption();
+                    await loadRecentTransactions('redemptions');
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                console.error('Redemption error:', error);
+                showMessage('Error processing redemption', 'error');
+            }
+        }
+        
+        // Load recent transactions
+        async function loadRecentTransactions(type) {
+            const listDiv = document.getElementById('transactionsList');
+            
+            try {
+                listDiv.innerHTML = '<p class="loading">Loading transactions...</p>';
+                
+                const snapshot = await db.collection(type)
+                    .orderBy('createdAt', 'desc')
+                    .limit(10)
+                    .get();
+                
+                if (snapshot.empty) {
+                    listDiv.innerHTML = `<p class="no-results">No ${type} found</p>`;
+                    return;
+                }
+                
+                const transactions = [];
+                snapshot.forEach(doc => {
+                    transactions.push({ id: doc.id, ...doc.data() });
+                });
+                
+                const transactionsHTML = transactions.map(transaction => {
+                    if (type === 'purchases') {
+                        return `
+                            <div class="transaction-item">
+                                <div class="transaction-details">
+                                    <strong>${transaction.customerPhone}</strong>
+                                    <span class="amount">$${transaction.amount}</span>
+                                    <span class="points">+${transaction.pointsEarned} points</span>
+                                </div>
+                                <div class="transaction-date">
+                                    ${transaction.createdAt ? transaction.createdAt.toDate().toLocaleString() : 'Unknown date'}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        return `
+                            <div class="transaction-item">
+                                <div class="transaction-details">
+                                    <strong>${transaction.customerPhone}</strong>
+                                    <span class="reward">${transaction.rewardKg}kg redeemed</span>
+                                    <span class="points">-${transaction.pointsSpent} points</span>
+                                </div>
+                                <div class="transaction-date">
+                                    ${transaction.createdAt ? transaction.createdAt.toDate().toLocaleString() : 'Unknown date'}
+                                </div>
+                            </div>
+                        `;
+                    }
+                }).join('');
+                
+                listDiv.innerHTML = transactionsHTML;
+            } catch (error) {
+                console.error('Load transactions error:', error);
+                listDiv.innerHTML = '<p class="error">Error loading transactions</p>';
+            }
+        }
+        
+        // Show transactions tab
+        function showTransactions(type) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            loadRecentTransactions(type);
+        }
+        
+        // Logout
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                await auth.signOut();
+                currentAdmin = null;
+                currentCustomerForRedemption = null;
+                document.getElementById('loginCard').style.display = 'block';
+                document.getElementById('adminDashboard').style.display = 'none';
+                window.location.href = 'index.html';
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        });
+        
+        // Utility functions
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+            
+            if (type === 'success' || type === 'info') {
+                setTimeout(() => {
+                    messageDiv.style.display = 'none';
+                }, 5000);
+            }
+        }
+        
+        function showLoginMessage(text, type) {
+            const messageDiv = document.getElementById('loginMessage');
+            messageDiv.textContent = text;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

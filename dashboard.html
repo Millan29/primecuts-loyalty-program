@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Butchery Loyalty</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Firebase CDN -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🥩 Your Loyalty Dashboard</h1>
+            <p>Welcome back, <span id="customerName">valued customer</span>!</p>
+            <button id="logoutBtn" class="btn btn-secondary small">Logout</button>
+        </div>
+        
+        <!-- Points Balance Card -->
+        <div class="card">
+            <h2>Current Points Balance</h2>
+            <div class="points-display">
+                <span id="pointsBalance">0</span> points
+            </div>
+            <small>Earn 5 points for every $100 spent</small>
+        </div>
+        
+        <!-- Rewards Progress Card -->
+        <div class="card">
+            <h2>Available Rewards</h2>
+            <div class="rewards-list">
+                <div class="reward-item" id="reward100">
+                    <div class="reward-info">
+                        <strong>0.5kg Premium Meat</strong>
+                        <span class="points-required">100 points required</span>
+                    </div>
+                    <button class="btn btn-small btn-primary" onclick="redeemReward('small')">
+                        Redeem
+                    </button>
+                </div>
+                
+                <div class="reward-item" id="reward180">
+                    <div class="reward-info">
+                        <strong>0.75kg Premium Meat</strong>
+                        <span class="points-required">180 points required</span>
+                    </div>
+                    <button class="btn btn-small btn-primary" onclick="redeemReward('large')">
+                        Redeem
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Recent Activity -->
+        <div class="card">
+            <h2>Recent Activity</h2>
+            <div id="recentActivity">
+                <p class="loading">Loading your activity...</p>
+            </div>
+        </div>
+        
+        <div id="message" class="message"></div>
+    </div>
+    
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+    <script>
+        let currentCustomerPhone = null;\n        let currentPoints = 0;
+        
+        // Check authentication and load dashboard data
+        window.addEventListener('load', async () => {
+            try {
+                // Check if user is authenticated
+                const user = auth.currentUser;
+                currentCustomerPhone = sessionStorage.getItem('customerPhone');
+                
+                if (!user || !currentCustomerPhone) {
+                    // Redirect to login if not authenticated
+                    window.location.href = 'login.html';
+                    return;
+                }
+                
+                await loadDashboardData();
+            } catch (error) {
+                console.error('Dashboard load error:', error);
+                showMessage('Error loading dashboard. Please try logging in again.', 'error');
+            }
+        });
+        
+        // Load customer data and recent activity
+        async function loadDashboardData() {
+            try {
+                // Get customer data
+                const customerResult = await DatabaseHelpers.getCustomer(currentCustomerPhone);
+                
+                if (customerResult.success) {
+                    const customer = customerResult.data;
+                    currentPoints = customer.points || 0;
+                    
+                    // Update UI
+                    document.getElementById('pointsBalance').textContent = currentPoints;
+                    document.getElementById('customerName').textContent = customer.name || 'valued customer';
+                    
+                    // Update reward buttons based on available points
+                    updateRewardButtons();
+                    
+                    // Load recent activity
+                    await loadRecentActivity();
+                } else {
+                    showMessage('Error loading customer data', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                showMessage('Error loading dashboard data', 'error');
+            }
+        }
+        
+        // Update reward button states based on current points
+        function updateRewardButtons() {
+            const reward100Btn = document.querySelector('#reward100 button');
+            const reward180Btn = document.querySelector('#reward180 button');
+            
+            // 100 points reward
+            if (currentPoints >= 100) {
+                reward100Btn.disabled = false;
+                reward100Btn.textContent = 'Redeem';
+                document.getElementById('reward100').classList.remove('disabled');
+            } else {
+                reward100Btn.disabled = true;
+                reward100Btn.textContent = `Need ${100 - currentPoints} more`;
+                document.getElementById('reward100').classList.add('disabled');
+            }
+            
+            // 180 points reward
+            if (currentPoints >= 180) {
+                reward180Btn.disabled = false;
+                reward180Btn.textContent = 'Redeem';
+                document.getElementById('reward180').classList.remove('disabled');
+            } else {
+                reward180Btn.disabled = true;
+                reward180Btn.textContent = `Need ${180 - currentPoints} more`;
+                document.getElementById('reward180').classList.add('disabled');
+            }
+        }
+        
+        // Load recent purchases and redemptions
+        async function loadRecentActivity() {
+            try {
+                const activityDiv = document.getElementById('recentActivity');
+                
+                // Get recent purchases
+                const purchasesSnapshot = await db.collection('purchases')
+                    .where('customerPhone', '==', currentCustomerPhone)
+                    .orderBy('createdAt', 'desc')
+                    .limit(5)
+                    .get();
+                
+                // Get recent redemptions
+                const redemptionsSnapshot = await db.collection('redemptions')
+                    .where('customerPhone', '==', currentCustomerPhone)
+                    .orderBy('createdAt', 'desc')
+                    .limit(5)
+                    .get();
+                
+                const activities = [];
+                
+                // Process purchases
+                purchasesSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    activities.push({
+                        type: 'purchase',
+                        date: data.createdAt?.toDate() || new Date(),
+                        amount: data.amount,
+                        points: data.pointsEarned
+                    });
+                });
+                
+                // Process redemptions
+                redemptionsSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    activities.push({
+                        type: 'redemption',
+                        date: data.createdAt?.toDate() || new Date(),
+                        kg: data.rewardKg,
+                        points: data.pointsSpent
+                    });
+                });
+                
+                // Sort by date
+                activities.sort((a, b) => b.date - a.date);
+                
+                // Display activities
+                if (activities.length === 0) {
+                    activityDiv.innerHTML = '<p class="no-activity">No recent activity</p>';
+                } else {
+                    const activityHTML = activities.slice(0, 5).map(activity => {
+                        if (activity.type === 'purchase') {
+                            return `
+                                <div class="activity-item purchase">
+                                    <span class="activity-icon">💰</span>
+                                    <div class="activity-details">
+                                        <strong>Purchase: $${activity.amount}</strong>
+                                        <small>Earned ${activity.points} points • ${formatDate(activity.date)}</small>
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            return `
+                                <div class="activity-item redemption">
+                                    <span class="activity-icon">🎁</span>
+                                    <div class="activity-details">
+                                        <strong>Redeemed ${activity.kg}kg meat</strong>
+                                        <small>Spent ${activity.points} points • ${formatDate(activity.date)}</small>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }).join('');
+                    
+                    activityDiv.innerHTML = activityHTML;
+                }
+            } catch (error) {
+                console.error('Error loading activity:', error);
+                document.getElementById('recentActivity').innerHTML = '<p class="error">Error loading activity</p>';
+            }
+        }
+        
+        // Redeem reward function
+        async function redeemReward(rewardType) {
+            try {
+                const rewardConfig = {
+                    'small': { kg: 0.5, points: 100 },
+                    'large': { kg: 0.75, points: 180 }
+                };
+                
+                const reward = rewardConfig[rewardType];
+                
+                if (currentPoints < reward.points) {
+                    showMessage(`You need ${reward.points - currentPoints} more points for this reward`, 'error');
+                    return;
+                }
+                
+                // Confirm redemption
+                if (!confirm(`Redeem ${reward.kg}kg of premium meat for ${reward.points} points?`)) {
+                    return;
+                }
+                
+                showMessage('Processing redemption...', 'info');
+                
+                // Process redemption (Note: In real app, this would be processed by admin)
+                // For demo purposes, we'll allow customer to redeem directly
+                const result = await DatabaseHelpers.redeemPoints(
+                    currentCustomerPhone, 
+                    rewardType, 
+                    auth.currentUser.uid
+                );
+                
+                if (result.success) {
+                    currentPoints = result.newBalance;
+                    showMessage(`Success! Redeemed ${result.rewardKg}kg meat. New balance: ${result.newBalance} points`, 'success');
+                    
+                    // Update UI
+                    document.getElementById('pointsBalance').textContent = currentPoints;
+                    updateRewardButtons();
+                    await loadRecentActivity();
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                console.error('Redemption error:', error);
+                showMessage('Error processing redemption. Please try again.', 'error');
+            }
+        }
+        
+        // Logout function
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                await auth.signOut();
+                sessionStorage.removeItem('customerPhone');
+                window.location.href = 'index.html';
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        });
+        
+        // Utility functions
+        function formatDate(date) {
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+        
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+            
+            // Auto-hide after 5 seconds for success/info messages
+            if (type === 'success' || type === 'info') {
+                setTimeout(() => {
+                    messageDiv.style.display = 'none';
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+</html>
