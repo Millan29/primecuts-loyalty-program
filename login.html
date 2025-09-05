@@ -20,8 +20,8 @@
         <div class="card">
             <form id="loginForm">
                 <div class="form-group">
-                    <label for="phoneNumber">Phone Number:</label>
-                    <input type="tel" id="phoneNumber" placeholder="+1234567890" required>
+                    <label for="email">Email Address:</label>
+                    <input type="email" id="email" placeholder="your@email.com" required>
                 </div>
                 
                 <div class="form-group">
@@ -47,7 +47,7 @@
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            const phoneNumber = document.getElementById('phoneNumber').value.trim();
+            const email = document.getElementById('email').value.trim();
             const password = document.getElementById('password').value;
             const messageDiv = document.getElementById('message');
             
@@ -58,18 +58,16 @@
             submitBtn.disabled = true;
             
             try {
-                // Convert phone to email format for Firebase Auth
-                const email = `${phoneNumber}@butchery.local`;
-                
-                // Sign in with Firebase Auth
+                // Sign in with Firebase Auth using email
                 const userCredential = await auth.signInWithEmailAndPassword(email, password);
                 
-                // Verify customer exists in Firestore
-                const customerResult = await DatabaseHelpers.getCustomer(phoneNumber);
+                // Get customer data from Firestore using email
+                const customerResult = await DatabaseHelpers.getCustomerByEmail(email);
                 
                 if (customerResult.success) {
-                    // Store phone number in session for easy access
-                    sessionStorage.setItem('customerPhone', phoneNumber);
+                    // Store customer data in session for easy access
+                    sessionStorage.setItem('customerPhone', customerResult.data.phone);
+                    sessionStorage.setItem('customerEmail', email);
                     showMessage('Login successful! Redirecting...', 'success');
                     setTimeout(() => {
                         window.location.href = 'dashboard.html';
@@ -83,7 +81,7 @@
                 let errorMessage = 'Login failed. Please check your credentials.';
                 
                 if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-                    errorMessage = 'Invalid phone number or password';
+                    errorMessage = 'Invalid email or password';
                 } else if (error.code === 'auth/too-many-requests') {
                     errorMessage = 'Too many failed attempts. Please try again later.';
                 }
