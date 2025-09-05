@@ -20,6 +20,12 @@
         <div class="card">
             <form id="signupForm">
                 <div class="form-group">
+                    <label for="email">Email Address:</label>
+                    <input type="email" id="email" placeholder="your@email.com" required>
+                    <small>We'll send you a verification email</small>
+                </div>
+                
+                <div class="form-group">
                     <label for="phoneNumber">Phone Number:</label>
                     <input type="tel" id="phoneNumber" placeholder="+1234567890" required>
                     <small>Include country code (e.g., +1 for US)</small>
@@ -58,6 +64,7 @@
         document.getElementById('signupForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            const email = document.getElementById('email').value.trim();
             const phoneNumber = document.getElementById('phoneNumber').value.trim();
             const name = document.getElementById('name').value.trim();
             const password = document.getElementById('password').value;
@@ -75,6 +82,11 @@
                 return;
             }
             
+            if (!email.includes('@')) {
+                showMessage('Please enter a valid email address', 'error');
+                return;
+            }
+            
             // Show loading state
             const submitBtn = e.target.querySelector('button[type="submit"]');
             const originalText = submitBtn.textContent;
@@ -83,7 +95,7 @@
             
             try {
                 // Create customer account
-                const result = await DatabaseHelpers.createCustomer(phoneNumber, password, name);
+                const result = await DatabaseHelpers.createCustomer(email, phoneNumber, password, name);
                 
                 if (result.success) {
                     showMessage('Account created successfully! Redirecting to dashboard...', 'success');
