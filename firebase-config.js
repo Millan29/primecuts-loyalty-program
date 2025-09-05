@@ -47,9 +47,10 @@ REDEMPTION RULES:
 - 180 points = 0.75kg meat
 
 FIREBASE SECURITY RULES NEEDED:
-- Customers can only read/write their own data
+- Customers can only read/write their own data (by email match)
 - Admins can read/write all customer data
 - All writes must be authenticated
+- Email verification required for certain operations
 */
 
 // Firebase configuration object (replace with your actual config)
@@ -63,6 +64,7 @@ const firebaseConfig = {
   measurementId: "G-MNHS0CSYJ0"
 };
 
+
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 
@@ -74,19 +76,22 @@ const auth = firebase.auth();
 const DatabaseHelpers = {
   
   // Customer Operations
-  async createCustomer(phoneNumber, password, name = '') {
+  async createCustomer(email, phoneNumber, password, name = '') {
     try {
       // Create authentication account first
-      const userCredential = await auth.createUserWithEmailAndPassword(
-        `${phoneNumber}@butchery.local`, // Convert phone to email format
-        password
-      );
+      const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+      
+      // Send email verification
+      await userCredential.user.sendEmailVerification();
       
       // Create customer document in Firestore
       await db.collection('customers').doc(phoneNumber).set({
+        email: email,
+        phone: phoneNumber,
         points: 0,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         name: name,
+        emailVerified: false,
         uid: userCredential.user.uid
       });
       
@@ -107,6 +112,25 @@ const DatabaseHelpers = {
       }
     } catch (error) {
       console.error('Error getting customer:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async getCustomerByEmail(email) {
+    try {
+      const snapshot = await db.collection('customers')
+        .where('email', '==', email)
+        .limit(1)
+        .get();
+      
+      if (!snapshot.empty) {
+        const doc = snapshot.docs[0];
+        return { success: true, data: { ...doc.data(), phone: doc.id } };
+      } else {
+        return { success: false, error: 'Customer not found' };
+      }
+    } catch (error) {
+      console.error('Error getting customer by email:', error);
       return { success: false, error: error.message };
     }
   },
