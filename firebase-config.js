@@ -54,12 +54,13 @@ FIREBASE SECURITY RULES NEEDED:
 
 // Firebase configuration object (replace with your actual config)
 const firebaseConfig = {
-  apiKey: "your-api-key-here",
-  authDomain: "your-project.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef123456"
+  apiKey: "AIzaSyDufK77VjSXLwH2cbbq3lE90eMjtz2ins4",
+  authDomain: "butchery-loyalty-points-system.firebaseapp.com",
+  projectId: "butchery-loyalty-points-system",
+  storageBucket: "butchery-loyalty-points-system.firebasestorage.app",
+  messagingSenderId: "525229819449",
+  appId: "1:525229819449:web:85075b0d1771446be02fe8",
+  measurementId: "G-MNHS0CSYJ0"
 };
 
 // Initialize Firebase
